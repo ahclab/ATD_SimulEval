@@ -43,6 +43,12 @@ class Instance(object):
         self.delays = []
         self.start_time = None
         self.metrics = {}
+        
+        #For ATDScorer
+        self.atd_delays = []
+        self.src_times = []
+        self.src_time_point = 0
+        self.tgt_time_point = 0
 
     @property
     def finish(self):
@@ -131,6 +137,20 @@ class TextInputInstance(Instance):
     def step_to_delay(self, step):
         return step
 
+    def step_to_atd_delay(self, step, prediction_list):
+        delays = []
+        for token in prediction_list:
+            if self.src_times != []:
+                self.src_time_point = self.src_times.pop(0)
+            
+            tgt_start_time =  max( step, self.tgt_time_point)
+            self.tgt_time_point = tgt_start_time + 1
+            
+            delays.append(self.tgt_time_point - self.src_time_point)
+            
+        return delays
+        
+    
     def send_source(self, config_dict: Optional[Dict]):
         if self.step >= self.source_length:
             segment = EmptySegment(finished=True)
@@ -141,6 +161,7 @@ class TextInputInstance(Instance):
                 finished=(self.step == self.source_length - 1),
             )
             self.step += 1
+            self.src_times.append( self.step )
 
         return segment
 
@@ -179,6 +200,8 @@ class TextOutputInstance(Instance):
             prediction_list
         )
         self.delays += [self.step_to_delay(self.step)] * len(prediction_list)
+        
+        self.atd_delays += self.step_to_atd_delay(self.step, prediction_list)
 
     @property
     def target_length_latency(self):
