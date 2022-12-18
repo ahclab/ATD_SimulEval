@@ -204,13 +204,14 @@ class ATDScorer(LatencyScorer):
     """
     def __call__(self, instances) -> float:
         scores = []
+        ca = "NCA" if not self.computation_aware else "CA"
         for index, ins in instances.items():
             delays = getattr(ins, "atd_delays", None)
             if delays is None:
                 logger.warn(f"{index} instance has no delay information. Skipped")
                 continue
 
-            scores.append(self.compute(delays))
+            scores.append(self.compute(delays[ca]))
 
         return mean(scores)
     

@@ -45,10 +45,12 @@ class Instance(object):
         self.metrics = {}
         
         #For ATDScorer
-        self.atd_delays = []
-        self.src_times = []
-        self.src_time_point = 0
-        self.tgt_time_point = 0
+        self.atd_delays = {"NCA":[], "CA":[]}
+        self.src_times = {"NCA":[], "CA":[]}
+        self.src_time_point = {"NCA":0, "CA":0}
+        self.tgt_time_point = {"NCA":0, "CA":0}
+        self.abs_src_time = 0
+        self.abs_tgt_time = 0
 
     @property
     def finish(self):
@@ -136,18 +138,31 @@ class TextInputInstance(Instance):
 
     def step_to_delay(self, step):
         return step
+    
+    def step_to_atd_delay(self, step, prediction_list, ca = "NCA"):
+        
+        def calc_delays(compute_times, tgt_start_time):
+            delays = []
+            for compute_time in compute_times:
+                if self.src_times[ca] != []:
+                    self.src_time_point[ca] = self.src_times[ca].pop(0)
+                self.tgt_time_point[ca] = tgt_start_time + 1 + compute_time
+                delays.append(self.tgt_time_point[ca] - self.src_time_point[ca])
+                tgt_start_time = self.tgt_time_point[ca]  
+            return delays
+        
+        compute_times = [0] * len(prediction_list)
+        tgt_start_time = max( step, self.tgt_time_point[ca])
+        
+        if ca == "CA":            
+            if tgt_start_time == step:
+                compute_times[0] = time.time() - self.abs_src_time
+            elif tgt_start_time == self.tgt_time_point[ca]:
+                compute_times[0] = time.time() - self.abs_tgt_time
+            delays = calc_delays(compute_times, tgt_start_time)
+        else:
+            delays = calc_delays(compute_times, tgt_start_time)
 
-    def step_to_atd_delay(self, step, prediction_list):
-        delays = []
-        for token in prediction_list:
-            if self.src_times != []:
-                self.src_time_point = self.src_times.pop(0)
-            
-            tgt_start_time =  max( step, self.tgt_time_point)
-            self.tgt_time_point = tgt_start_time + 1
-            
-            delays.append(self.tgt_time_point - self.src_time_point)
-            
         return delays
         
     
@@ -161,7 +176,11 @@ class TextInputInstance(Instance):
                 finished=(self.step == self.source_length - 1),
             )
             self.step += 1
-            self.src_times.append( self.step )
+            
+            #For ATDScore
+            self.src_times["NCA"].append( self.step )
+            self.src_times["CA"].append( self.step )
+            self.abs_src_time = time.time()
 
         return segment
 
@@ -201,7 +220,10 @@ class TextOutputInstance(Instance):
         )
         self.delays += [self.step_to_delay(self.step)] * len(prediction_list)
         
-        self.atd_delays += self.step_to_atd_delay(self.step, prediction_list)
+        #For ATDScore
+        self.atd_delays["NCA"] += self.step_to_atd_delay(self.step, prediction_list)
+        self.atd_delays["CA"] += self.step_to_atd_delay(self.step, prediction_list, ca="CA")
+        self.abs_tgt_time = time.time()
 
     @property
     def target_length_latency(self):
