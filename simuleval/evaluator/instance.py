@@ -139,23 +139,23 @@ class TextInputInstance(Instance):
     def step_to_delay(self, step):
         return step
     
-    def step_to_atd_delay(self, step, prediction_list, ca = "NCA"):
+    def step_to_atd_delay(self, now_src_time, prediction_list, ca = "NCA"):
         
         def calc_delays(compute_times, tgt_start_time):
             delays = []
             for compute_time in compute_times:
                 if self.src_times[ca] != []:
                     self.src_time_point[ca] = self.src_times[ca].pop(0)
-                self.tgt_time_point[ca] = tgt_start_time + 1 + compute_time
+                self.tgt_time_point[ca] = tgt_start_time + self.tgt_txt_seg_len + compute_time
                 delays.append(self.tgt_time_point[ca] - self.src_time_point[ca])
-                tgt_start_time = self.tgt_time_point[ca]  
+                tgt_start_time = self.tgt_time_point[ca]
             return delays
         
         compute_times = [0] * len(prediction_list)
-        tgt_start_time = max( step, self.tgt_time_point[ca])
+        tgt_start_time = max(now_src_time, self.tgt_time_point[ca])
         
-        if ca == "CA":            
-            if tgt_start_time == step:
+        if ca == "CA":
+            if tgt_start_time == now_src_time:
                 compute_times[0] = time.time() - self.abs_src_time
             elif tgt_start_time == self.tgt_time_point[ca]:
                 compute_times[0] = time.time() - self.abs_tgt_time
@@ -178,8 +178,8 @@ class TextInputInstance(Instance):
             self.step += 1
             
             #For ATDScore
-            self.src_times["NCA"].append( self.step )
-            self.src_times["CA"].append( self.step )
+            self.src_times["NCA"].append(self.step)
+            self.src_times["CA"].append(self.step)
             self.abs_src_time = time.time()
 
         return segment
@@ -282,6 +282,12 @@ class SpeechInputInstance(Instance):
                 is_finished = False
 
             self.step = min(self.step + num_samples, len(self.samples))
+            
+            #For ATDScore
+            self.src_times["NCA"].append(self.len_sample_to_ms(self.step))
+            self.src_times["CA"].append(self.len_sample_to_ms(self.step))
+            self.abs_src_time = time.time()
+            
 
             segment = SpeechSegment(
                 index=self.len_sample_to_ms(self.step),
@@ -406,14 +412,22 @@ class SpeechOutputInstance(Instance):
         self.durations.append(pred_duration)
         self.prediction_list.append(segment.content)
         self.delays.append(self.step_to_delay(self.step))
-
+        
+        #For ATDScore
+        self.atd_delays["NCA"] += self.step_to_atd_delay(self.len_sample_to_ms(self.step), prediction_list)
+        self.atd_delays["CA"] += self.step_to_atd_delay(self.len_sample_to_ms(self.step), prediction_list, ca="CA")
+        self.abs_tgt_time = time.time()
 
 class SpeechToTextInstance(SpeechInputInstance, TextOutputInstance):
-    pass
+    def __init__(self, index, dataloader, args):
+        super().__init__(index, dataloader, args)
+        self.tgt_txt_seg_len = 0
 
 
 class TextToTextInstance(TextInputInstance, TextOutputInstance):
-    pass
+    def __init__(self, index, dataloader, args):
+        super().__init__(index, dataloader, args)
+        self.tgt_txt_seg_len = 1
 
 
 class SpeechToSpeechInstance(SpeechInputInstance, SpeechOutputInstance):
